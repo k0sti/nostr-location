@@ -8,10 +8,13 @@ Encrypted Location Sharing
 
 This NIP defines an addressable event type for sharing geographic location information in an encrypted format.
 
-Motivation for the specification is to have a simple but generic and extensible way to share location data. Geohash is used as the base unit for location because of its simplicity and good Nostr adoption. An optional accuracy field is added to indicate the confidence radius of the shared location, in cases where the length of the geohash is not sufficient.
-Additional metadata can be added in public tags or in encrypted tags inside the content field.
-The event is suitable for sharing fixed locations or continuous/real-time location updates.
-The combination of sender pubkeys (known or ephemeral), receiver pubkeys (known or ephemeral), and the optional p-tag enables different privacy models ranging from direct peer-to-peer sharing to anonymous broadcasts.
+Motivation for the specification is to have a simple but generic and extensible way to share encrypted location data efficiently. The event is suitable for sharing fixed locations or continuous/real-time location updates.
+
+Geohash is used as the base unit for location because of its simplicity and good Nostr adoption. An optional accuracy field is added to indicate the confidence radius of the shared location, in cases where the length of the geohash is not sufficient. Additional metadata can be added in encrypted tags inside the content field.
+
+The combination of sender pubkeys (known or ephemeral), receiver pubkeys (known or ephemeral), and the optional p-tag enables different privacy models.
+
+Reason for using addressable events (with d-tag) is that location is considered a changing property of a target/object/resource and that single pubkey could have several targets. With addressable events client can request location directly, without filtering possibly long list of old locations.
 
 ## Event format
 
@@ -36,7 +39,7 @@ Location sharing uses addressable event of `kind:30473`, which has the following
 
 - The `d` tag, used as an identifier:
   - `["d", ""] or omitted` for a single location per pubkey
-  - `["d", "<name>"]` for a named location (e.g., "home", "office")
+  - `["d", "<name>"]` for a named location. Value should be randomly chosen unique identifier representing the target location.
 
 - The `p` tag, used to specify the recipient:
   - **When present**: direct message to specified pubkey
@@ -62,7 +65,7 @@ Array may contain other tags. All tags except `g` are optional. This JSON array 
 
 ### Single location sharing
 
-Share current location with a specific user:
+Share current location with a specific user. Content is encrypted with recipients public key.
 
 ```json
 {
@@ -70,17 +73,17 @@ Share current location with a specific user:
   "pubkey": "<sender pubkey>",
   "tags": [
     ["p", "<recipient pubkey>"],
-    ["d", ""],
     ["expiration", "1735689600"]
   ],
-  "content": "<encrypted location array>"
+  "content": ENCRYPTED [
+    ["g", "sjkg8wghv5u"]
+  ]
 }
 ```
 
 ### Named location sharing with a group
 
-Share a named location with a group.
-Group key is generated and shared out-of-band with recipients.
+Share a named location with a group. Group key is generated and shared out-of-band with recipients. Content is encrypted with group's public key. 'd'-tag is randomly chosen unique identifier for the place that encrypted location data represents.
 
 ```json
 {
@@ -88,16 +91,19 @@ Group key is generated and shared out-of-band with recipients.
   "pubkey": "<sender-pubkey>",
   "tags": [
     ["p", "<group-pubkey>"],
-    ["d", "home"]
+    ["d", "93kffs"]
   ],
-  "content": "<location array, encrypted with group key>"
+  "content": ENCRYPTED [
+    ["g", "sjkg8wghv5u"],
+    ["name", "office"]
+  ]
 }
 ```
 
 ### Anonymous location sharing
 
 Share location with ephemeral pubkey without revealing recipient.
-Sender pubkey is shared out-of-band with recipient.
+Receiver pubkey is known by the sender and sender pubkey is shared out-of-band with the recipient.
 
 ```json
 {
@@ -106,6 +112,8 @@ Sender pubkey is shared out-of-band with recipient.
   "tags": [
     ["expiration", "1735689600"]
   ],
-  "content": "<location array, encrypted with recipient key>"
+  "content": ENCRYPTED [
+    ["g", "sjkg8wghv5u"]
+  ]
 }
 ```
