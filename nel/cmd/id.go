@@ -56,9 +56,10 @@ var idShowCmd = &cobra.Command{
 }
 
 var idGenerateCmd = &cobra.Command{
-	Use:     "generate [name]",
+	Use:     "generate <name>",
 	Aliases: []string{"gen", "new"},
-	Short:   "Generate a new identity",
+	Short:   "Generate a new identity and save it",
+	Args:    cobra.ExactArgs(1),
 	RunE:    generateIdentity,
 }
 
@@ -69,8 +70,6 @@ func init() {
 	idCmd.AddCommand(idRemoveCmd)
 	idCmd.AddCommand(idShowCmd)
 	idCmd.AddCommand(idGenerateCmd)
-	
-	idGenerateCmd.Flags().Bool("save", false, "Save the generated identity")
 }
 
 func getIdentityFile() string {
@@ -227,46 +226,43 @@ func showIdentity(cmd *cobra.Command, args []string) error {
 }
 
 func generateIdentity(cmd *cobra.Command, args []string) error {
+	name := args[0]
+	
+	// Load existing identities
+	identities, err := loadIdentities()
+	if err != nil {
+		return fmt.Errorf("failed to load identities: %w", err)
+	}
+	
+	// Check if name already exists
+	if _, exists := identities[name]; exists {
+		return fmt.Errorf("identity '%s' already exists", name)
+	}
+	
+	// Generate new keys
 	sk := nostr.GeneratePrivateKey()
 	pk, _ := nostr.GetPublicKey(sk)
 	nsec, _ := nip19.EncodePrivateKey(sk)
 	npub, _ := nip19.EncodePublicKey(pk)
 	
-	fmt.Println("Generated New Identity:")
+	// Save identity
+	identities[name] = Identity{
+		Name:  name,
+		Nsec:  nsec,
+		Npub:  npub,
+		Hex:   pk,
+		Added: time.Now().Format("2006-01-02 15:04:05"),
+	}
+	
+	if err := saveIdentities(identities); err != nil {
+		return fmt.Errorf("failed to save identity: %w", err)
+	}
+	
+	// Display results
+	fmt.Printf("Generated and saved new identity '%s':\n", name)
 	fmt.Printf("  Private Key (nsec): %s\n", nsec)
 	fmt.Printf("  Public Key (npub):  %s\n", npub)
 	fmt.Printf("  Public Key (hex):   %s\n", pk)
-	
-	shouldSave, _ := cmd.Flags().GetBool("save")
-	if shouldSave && len(args) > 0 {
-		name := args[0]
-		
-		identities, err := loadIdentities()
-		if err != nil {
-			return fmt.Errorf("failed to load identities: %w", err)
-		}
-		
-		if _, exists := identities[name]; exists {
-			return fmt.Errorf("identity '%s' already exists", name)
-		}
-		
-		identities[name] = Identity{
-			Name:  name,
-			Nsec:  nsec,
-			Npub:  npub,
-			Hex:   pk,
-			Added: time.Now().Format("2006-01-02 15:04:05"),
-		}
-		
-		if err := saveIdentities(identities); err != nil {
-			return fmt.Errorf("failed to save identity: %w", err)
-		}
-		
-		fmt.Printf("\n✓ Saved as '%s'\n", name)
-	} else if shouldSave {
-		fmt.Println("\n⚠️  To save, provide a name: nel id generate --save <name>")
-	}
-	
 	fmt.Println("\n⚠️  Keep your private key (nsec) secret and secure!")
 	
 	return nil
