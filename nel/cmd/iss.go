@@ -47,7 +47,9 @@ func init() {
 	issCmd.Flags().StringP("sender", "s", "", "Sender private key (nsec... or @identity)")
 	issCmd.Flags().StringP("receiver", "r", "", "Receiver public key (npub... or @identity)")
 	issCmd.Flags().Bool("anon", false, "Send anonymous location (no p-tag)")
-	
+	issCmd.Flags().Int("accuracy", 0, "Location accuracy in meters (adds 'accuracy' tag to encrypted content)")
+	issCmd.Flags().Int("precision", 0, "Geohash precision (number of characters, 1-12)")
+
 	issCmd.MarkFlagRequired("sender")
 	issCmd.MarkFlagRequired("receiver")
 }
@@ -84,6 +86,8 @@ type issConfig struct {
 	relayURL       string
 	interval       int
 	anon           bool
+	accuracy_m     int
+	precision      int
 }
 
 func validateISSConfig() (*issConfig, error) {
@@ -131,6 +135,13 @@ func validateISSConfig() (*issConfig, error) {
 	}
 
 	anon := k.Bool("anon")
+	accuracy_m := k.Int("accuracy")
+	precision := k.Int("precision")
+
+	// Validate precision if provided
+	if precision != 0 && (precision < 1 || precision > 12) {
+		return nil, fmt.Errorf("precision must be between 1 and 12 characters")
+	}
 
 	return &issConfig{
 		senderSK:       senderSK.(string),
@@ -138,6 +149,8 @@ func validateISSConfig() (*issConfig, error) {
 		relayURL:       relayURL,
 		interval:       interval,
 		anon:           anon,
+		accuracy_m:     accuracy_m,
+		precision:      precision,
 	}, nil
 }
 
@@ -153,7 +166,7 @@ func processISSUpdate(config *issConfig) {
 		position.ISSPosition.Longitude)
 
 	ttl := 2 * config.interval
-	event, err := createLocationEvent(config.senderSK, config.receiverPubkey, position, ttl, config.anon)
+	event, err := createLocationEvent(config.senderSK, config.receiverPubkey, position, ttl, config.anon, config.accuracy_m, config.precision)
 	if err != nil {
 		log.Printf("Error creating location event: %v", err)
 		return
@@ -186,7 +199,7 @@ func fetchISSLocation(apiURL string) (*ISSPosition, error) {
 	return &position, nil
 }
 
-func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition, ttl int, anon bool) (*nostr.Event, error) {
+func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition, ttl int, anon bool, accuracy_m int, precision int) (*nostr.Event, error) {
 	// Parse coordinates
 	lat, err := strconv.ParseFloat(position.ISSPosition.Latitude, 64)
 	if err != nil {
@@ -198,10 +211,23 @@ func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition,
 		return nil, fmt.Errorf("failed to parse longitude: %w", err)
 	}
 
+	// Generate geohash with specified precision or default
+	var gh string
+	if precision > 0 {
+		gh = geohash.EncodeWithPrecision(lat, lon, uint(precision))
+	} else {
+		gh = geohash.Encode(lat, lon)
+	}
+
 	// Create location data
 	locationData := [][]interface{}{
-		{"g", geohash.Encode(lat, lon)},
+		{"g", gh},
 		{"name", "ISS"},
+	}
+
+	// Add accuracy tag if specified
+	if accuracy_m > 0 {
+		locationData = append(locationData, []interface{}{"accuracy", strconv.Itoa(accuracy_m)})
 	}
 
 	// Encrypt location data
@@ -246,7 +272,7 @@ func buildLocationEvent(senderSK, receiverPubkey, encryptedContent string, ttl i
 		{"d", issLocationID},
 		{"expiration", fmt.Sprintf("%d", expiration)},
 	}
-	
+
 	// Only add p-tag if not anonymous
 	if !anon {
 		tags = append(nostr.Tags{{"p", receiverPubkey}}, tags...)
