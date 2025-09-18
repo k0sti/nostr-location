@@ -225,6 +225,42 @@ func showIdentity(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// ResolveIdentityReference resolves @name to npub/nsec from stored identities
+func ResolveIdentityReference(value string, keyType string) (string, error) {
+	// Check if it's an identity reference
+	if !strings.HasPrefix(value, "@") {
+		return value, nil
+	}
+	
+	// Extract the identity name
+	name := strings.TrimPrefix(value, "@")
+	if name == "" {
+		return "", fmt.Errorf("invalid identity reference: missing name after @")
+	}
+	
+	// Load identities
+	identities, err := loadIdentities()
+	if err != nil {
+		return "", fmt.Errorf("failed to load identities: %w", err)
+	}
+	
+	// Look up the identity
+	identity, exists := identities[name]
+	if !exists {
+		return "", fmt.Errorf("identity '%s' not found", name)
+	}
+	
+	// Return the appropriate key based on keyType
+	switch keyType {
+	case "nsec":
+		return identity.Nsec, nil
+	case "npub":
+		return identity.Npub, nil
+	default:
+		return "", fmt.Errorf("invalid key type: %s", keyType)
+	}
+}
+
 func generateIdentity(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	

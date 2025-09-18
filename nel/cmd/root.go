@@ -87,7 +87,7 @@ func loadEnvFile() {
 	}
 }
 
-// LoadFlags merges command flags into config
+// LoadFlags merges command flags into config and resolves identity references
 func LoadFlags(cmd *cobra.Command) {
 	// Set defaults from command flags
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -107,6 +107,33 @@ func LoadFlags(cmd *cobra.Command) {
 			k.Set(normalizeKey(f.Name), f.Value.String())
 		}
 	})
+	
+	// Resolve identity references for sender-nsec, receiver-nsec, and receiver-npub
+	resolveIdentityFlags()
+}
+
+// resolveIdentityFlags resolves @name references in configuration
+func resolveIdentityFlags() {
+	// Resolve sender-nsec
+	if senderNsec := k.String("sender.nsec"); senderNsec != "" {
+		if resolved, err := ResolveIdentityReference(senderNsec, "nsec"); err == nil {
+			k.Set("sender.nsec", resolved)
+		}
+	}
+	
+	// Resolve receiver-nsec
+	if receiverNsec := k.String("receiver.nsec"); receiverNsec != "" {
+		if resolved, err := ResolveIdentityReference(receiverNsec, "nsec"); err == nil {
+			k.Set("receiver.nsec", resolved)
+		}
+	}
+	
+	// Resolve receiver-npub
+	if receiverNpub := k.String("receiver.npub"); receiverNpub != "" {
+		if resolved, err := ResolveIdentityReference(receiverNpub, "npub"); err == nil {
+			k.Set("receiver.npub", resolved)
+		}
+	}
 }
 
 // normalizeKey converts flag names to config keys (sender-nsec -> sender.nsec)
