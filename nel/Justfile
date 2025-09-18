@@ -1,0 +1,51 @@
+#!/usr/bin/env just
+
+default:
+    @just --list
+
+# Build the nel CLI
+build:
+    go build -o nel .
+
+# Install nel to $GOPATH/bin
+install: build
+    go install
+
+# Run the ISS tracker demo
+iss:
+    go run . iss
+
+# Run the location listener
+listen:
+    go run . listen
+
+# Generate a new identity
+id-gen:
+    go run . id generate
+
+# List all identities
+id-list:
+    go run . id list
+
+# Clean build artifacts
+clean:
+    rm -f nel
+
+# Run go fmt
+fmt:
+    go fmt ./...
+
+# Run go vet
+vet:
+    go vet ./...
+
+# Run tests
+test:
+    go test -v ./...
+
+# Build for multiple platforms
+build-all:
+    GOOS=linux GOARCH=amd64 go build -o nel-linux-amd64 .
+    GOOS=darwin GOARCH=amd64 go build -o nel-darwin-amd64 .
+    GOOS=darwin GOARCH=arm64 go build -o nel-darwin-arm64 .
+    GOOS=windows GOARCH=amd64 go build -o nel-windows-amd64.exe .
