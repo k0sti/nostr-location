@@ -46,7 +46,8 @@ func init() {
 	issCmd.Flags().IntP("interval", "i", defaultInterval, "Update interval in seconds")
 	issCmd.Flags().StringP("sender", "s", "", "Sender private key (nsec... or @identity)")
 	issCmd.Flags().StringP("receiver", "r", "", "Receiver public key (npub... or @identity)")
-	
+	issCmd.Flags().Bool("anon", false, "Send anonymous location (no p-tag)")
+
 	issCmd.MarkFlagRequired("sender")
 	issCmd.MarkFlagRequired("receiver")
 }
@@ -61,6 +62,11 @@ func runISS(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Printf("Starting ISS location tracker...")
+	if config.anon {
+		log.Printf("Mode: Anonymous (no p-tag)")
+	} else {
+		log.Printf("Mode: Direct message")
+	}
 	log.Printf("Update interval: %d seconds", config.interval)
 	log.Printf("Relay: %s", config.relayURL)
 
@@ -77,6 +83,7 @@ type issConfig struct {
 	receiverPubkey string
 	relayURL       string
 	interval       int
+	anon           bool
 }
 
 func validateISSConfig() (*issConfig, error) {
@@ -123,11 +130,14 @@ func validateISSConfig() (*issConfig, error) {
 		}
 	}
 
+	anon := k.Bool("anon")
+
 	return &issConfig{
 		senderSK:       senderSK.(string),
 		receiverPubkey: receiverPubkeyRaw.(string),
 		relayURL:       relayURL,
 		interval:       interval,
+		anon:           anon,
 	}, nil
 }
 
@@ -143,7 +153,7 @@ func processISSUpdate(config *issConfig) {
 		position.ISSPosition.Longitude)
 
 	ttl := 2 * config.interval
-	event, err := createLocationEvent(config.senderSK, config.receiverPubkey, position, ttl)
+	event, err := createLocationEvent(config.senderSK, config.receiverPubkey, position, ttl, config.anon)
 	if err != nil {
 		log.Printf("Error creating location event: %v", err)
 		return
@@ -176,7 +186,7 @@ func fetchISSLocation(apiURL string) (*ISSPosition, error) {
 	return &position, nil
 }
 
-func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition, ttl int) (*nostr.Event, error) {
+func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition, ttl int, anon bool) (*nostr.Event, error) {
 	// Parse coordinates
 	lat, err := strconv.ParseFloat(position.ISSPosition.Latitude, 64)
 	if err != nil {
@@ -201,7 +211,7 @@ func createLocationEvent(senderSK, receiverPubkey string, position *ISSPosition,
 	}
 
 	// Build event
-	return buildLocationEvent(senderSK, receiverPubkey, encryptedContent, ttl)
+	return buildLocationEvent(senderSK, receiverPubkey, encryptedContent, ttl, anon)
 }
 
 func encryptLocationData(locationData [][]interface{}, senderSK, receiverPubkey string) (string, error) {
@@ -223,7 +233,7 @@ func encryptLocationData(locationData [][]interface{}, senderSK, receiverPubkey 
 	return encryptedContent, nil
 }
 
-func buildLocationEvent(senderSK, receiverPubkey, encryptedContent string, ttl int) (*nostr.Event, error) {
+func buildLocationEvent(senderSK, receiverPubkey, encryptedContent string, ttl int, anon bool) (*nostr.Event, error) {
 	senderPubkey, err := nostr.GetPublicKey(senderSK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sender public key: %w", err)
@@ -231,16 +241,23 @@ func buildLocationEvent(senderSK, receiverPubkey, encryptedContent string, ttl i
 
 	expiration := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
 
+	// Build tags based on anon flag
+	tags := nostr.Tags{
+		{"d", issLocationID},
+		{"expiration", fmt.Sprintf("%d", expiration)},
+	}
+
+	// Only add p-tag if not anonymous
+	if !anon {
+		tags = append(nostr.Tags{{"p", receiverPubkey}}, tags...)
+	}
+
 	event := &nostr.Event{
 		PubKey:    senderPubkey,
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Kind:      30473,
-		Tags: nostr.Tags{
-			{"p", receiverPubkey},
-			{"d", issLocationID},
-			{"expiration", fmt.Sprintf("%d", expiration)},
-		},
-		Content: encryptedContent,
+		Tags:      tags,
+		Content:   encryptedContent,
 	}
 
 	if err := event.Sign(senderSK); err != nil {
