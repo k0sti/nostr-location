@@ -39,9 +39,6 @@ func init() {
 	
 	// Global flags
 	rootCmd.PersistentFlags().String("relay", "wss://relay.damus.io", "Nostr relay URL")
-	rootCmd.PersistentFlags().String("sender-nsec", "", "Sender private key (nsec format)")
-	rootCmd.PersistentFlags().String("receiver-npub", "", "Receiver public key (npub format)")
-	rootCmd.PersistentFlags().String("receiver-nsec", "", "Receiver private key for listening (nsec format)")
 }
 
 func initConfig() {
@@ -87,7 +84,7 @@ func loadEnvFile() {
 	}
 }
 
-// LoadFlags merges command flags into config
+// LoadFlags merges command flags into config and resolves identity references
 func LoadFlags(cmd *cobra.Command) {
 	// Set defaults from command flags
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -98,7 +95,26 @@ func LoadFlags(cmd *cobra.Command) {
 	
 	// Override with explicitly set flags
 	cmd.Flags().Visit(func(f *pflag.Flag) {
-		k.Set(normalizeKey(f.Name), f.Value.String())
+		value := f.Value.String()
+		// Resolve identity references for specific flags
+		if f.Name == "sender" {
+			// For iss command, sender is nsec
+			if resolved, err := ResolveIdentityReference(value, "nsec"); err == nil {
+				value = resolved
+			}
+		} else if f.Name == "receiver" {
+			// Determine if this is for iss (npub) or listen (nsec) command
+			if cmd.Name() == "iss" {
+				if resolved, err := ResolveIdentityReference(value, "npub"); err == nil {
+					value = resolved
+				}
+			} else if cmd.Name() == "listen" {
+				if resolved, err := ResolveIdentityReference(value, "nsec"); err == nil {
+					value = resolved
+				}
+			}
+		}
+		k.Set(normalizeKey(f.Name), value)
 	})
 	
 	// Override with changed persistent flags
