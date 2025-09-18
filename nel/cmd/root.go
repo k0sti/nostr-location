@@ -39,9 +39,6 @@ func init() {
 	
 	// Global flags
 	rootCmd.PersistentFlags().String("relay", "wss://relay.damus.io", "Nostr relay URL")
-	rootCmd.PersistentFlags().String("sender-nsec", "", "Sender private key (nsec format)")
-	rootCmd.PersistentFlags().String("receiver-npub", "", "Receiver public key (npub format)")
-	rootCmd.PersistentFlags().String("receiver-nsec", "", "Receiver private key for listening (nsec format)")
 }
 
 func initConfig() {
@@ -98,7 +95,26 @@ func LoadFlags(cmd *cobra.Command) {
 	
 	// Override with explicitly set flags
 	cmd.Flags().Visit(func(f *pflag.Flag) {
-		k.Set(normalizeKey(f.Name), f.Value.String())
+		value := f.Value.String()
+		// Resolve identity references for specific flags
+		if f.Name == "sender" {
+			// For iss command, sender is nsec
+			if resolved, err := ResolveIdentityReference(value, "nsec"); err == nil {
+				value = resolved
+			}
+		} else if f.Name == "receiver" {
+			// Determine if this is for iss (npub) or listen (nsec) command
+			if cmd.Name() == "iss" {
+				if resolved, err := ResolveIdentityReference(value, "npub"); err == nil {
+					value = resolved
+				}
+			} else if cmd.Name() == "listen" {
+				if resolved, err := ResolveIdentityReference(value, "nsec"); err == nil {
+					value = resolved
+				}
+			}
+		}
+		k.Set(normalizeKey(f.Name), value)
 	})
 	
 	// Override with changed persistent flags
@@ -107,33 +123,6 @@ func LoadFlags(cmd *cobra.Command) {
 			k.Set(normalizeKey(f.Name), f.Value.String())
 		}
 	})
-	
-	// Resolve identity references for sender-nsec, receiver-nsec, and receiver-npub
-	resolveIdentityFlags()
-}
-
-// resolveIdentityFlags resolves @name references in configuration
-func resolveIdentityFlags() {
-	// Resolve sender-nsec
-	if senderNsec := k.String("sender.nsec"); senderNsec != "" {
-		if resolved, err := ResolveIdentityReference(senderNsec, "nsec"); err == nil {
-			k.Set("sender.nsec", resolved)
-		}
-	}
-	
-	// Resolve receiver-nsec
-	if receiverNsec := k.String("receiver.nsec"); receiverNsec != "" {
-		if resolved, err := ResolveIdentityReference(receiverNsec, "nsec"); err == nil {
-			k.Set("receiver.nsec", resolved)
-		}
-	}
-	
-	// Resolve receiver-npub
-	if receiverNpub := k.String("receiver.npub"); receiverNpub != "" {
-		if resolved, err := ResolveIdentityReference(receiverNpub, "npub"); err == nil {
-			k.Set("receiver.npub", resolved)
-		}
-	}
 }
 
 // normalizeKey converts flag names to config keys (sender-nsec -> sender.nsec)

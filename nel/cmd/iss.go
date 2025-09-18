@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mmcloughlin/geohash"
@@ -43,6 +44,11 @@ and broadcasts it as encrypted Nostr events using NIP-44 encryption.`,
 func init() {
 	rootCmd.AddCommand(issCmd)
 	issCmd.Flags().IntP("interval", "i", defaultInterval, "Update interval in seconds")
+	issCmd.Flags().StringP("sender", "s", "", "Sender private key (nsec... or @identity)")
+	issCmd.Flags().StringP("receiver", "r", "", "Receiver public key (npub... or @identity)")
+	
+	issCmd.MarkFlagRequired("sender")
+	issCmd.MarkFlagRequired("receiver")
 }
 
 func runISS(cmd *cobra.Command, args []string) error {
@@ -74,27 +80,37 @@ type issConfig struct {
 }
 
 func validateISSConfig() (*issConfig, error) {
-	senderNsec := k.String("sender.nsec")
-	if senderNsec == "" {
-		return nil, fmt.Errorf("sender nsec is required (--sender-nsec or NEL_SENDER_NSEC)")
+	sender := k.String("sender")
+	if sender == "" {
+		return nil, fmt.Errorf("sender is required (--sender or -s)")
 	}
 
-	receiverNpub := k.String("receiver.npub")
-	if receiverNpub == "" {
-		return nil, fmt.Errorf("receiver npub is required (--receiver-npub or NEL_RECEIVER_NPUB)")
+	receiver := k.String("receiver")
+	if receiver == "" {
+		return nil, fmt.Errorf("receiver is required (--receiver or -r)")
 	}
 
 	relayURL := k.String("relay")
 	if relayURL == "" {
-		return nil, fmt.Errorf("relay URL is required (--relay or NEL_RELAY)")
+		return nil, fmt.Errorf("relay URL is required (--relay)")
 	}
 
-	_, senderSK, err := nip19.Decode(senderNsec)
+	// Validate sender format (should be nsec after resolution)
+	if !strings.HasPrefix(sender, "nsec1") {
+		return nil, fmt.Errorf("sender must be an nsec private key (starting with 'nsec1') or @identity reference")
+	}
+
+	// Validate receiver format (should be npub after resolution)
+	if !strings.HasPrefix(receiver, "npub1") {
+		return nil, fmt.Errorf("receiver must be an npub public key (starting with 'npub1') or @identity reference")
+	}
+
+	_, senderSK, err := nip19.Decode(sender)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode sender nsec: %w", err)
 	}
 
-	_, receiverPubkeyRaw, err := nip19.Decode(receiverNpub)
+	_, receiverPubkeyRaw, err := nip19.Decode(receiver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode receiver npub: %w", err)
 	}

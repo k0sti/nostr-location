@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/mmcloughlin/geohash"
@@ -27,8 +28,9 @@ private key and displays location data including coordinates.`,
 
 func init() {
 	rootCmd.AddCommand(listenCmd)
-
-	// No additional flags needed
+	listenCmd.Flags().StringP("receiver", "r", "", "Receiver private key (nsec... or @identity)")
+	
+	listenCmd.MarkFlagRequired("receiver")
 }
 
 func runListen(cmd *cobra.Command, args []string) error {
@@ -36,17 +38,22 @@ func runListen(cmd *cobra.Command, args []string) error {
 	LoadFlags(cmd)
 
 	// Access config with dot notation
-	receiverNsec := k.String("receiver.nsec")
-	if receiverNsec == "" {
-		return fmt.Errorf("receiver nsec is required (--receiver-nsec or NEL_RECEIVER_NSEC)")
+	receiver := k.String("receiver")
+	if receiver == "" {
+		return fmt.Errorf("receiver is required (--receiver or -r)")
 	}
 
 	relayURL := k.String("relay")
 	if relayURL == "" {
-		return fmt.Errorf("relay URL is required (--relay or NEL_LOCATION_RELAY)")
+		return fmt.Errorf("relay URL is required (--relay)")
 	}
 
-	_, receiverSKRaw, err := nip19.Decode(receiverNsec)
+	// Validate receiver format (should be nsec after resolution)
+	if !strings.HasPrefix(receiver, "nsec1") {
+		return fmt.Errorf("receiver must be an nsec private key (starting with 'nsec1') or @identity reference")
+	}
+
+	_, receiverSKRaw, err := nip19.Decode(receiver)
 	if err != nil {
 		return fmt.Errorf("failed to decode receiver nsec: %w", err)
 	}
