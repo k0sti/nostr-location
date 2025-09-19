@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
+	"github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +65,14 @@ var idGenerateCmd = &cobra.Command{
 	RunE:    generateIdentity,
 }
 
+var idExportCmd = &cobra.Command{
+	Use:   "export <@name|nsec>",
+	Short: "Export identity as URL with QR code",
+	Long:  "Export an identity as a URL and QR code for sharing. Accepts either @name reference or nsec directly.",
+	Args:  cobra.ExactArgs(1),
+	RunE:  exportIdentity,
+}
+
 func init() {
 	rootCmd.AddCommand(idCmd)
 	idCmd.AddCommand(idListCmd)
@@ -70,6 +80,7 @@ func init() {
 	idCmd.AddCommand(idRemoveCmd)
 	idCmd.AddCommand(idShowCmd)
 	idCmd.AddCommand(idGenerateCmd)
+	idCmd.AddCommand(idExportCmd)
 }
 
 func getIdentityFile() string {
@@ -300,6 +311,72 @@ func generateIdentity(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Public Key (npub):  %s\n", npub)
 	fmt.Printf("  Public Key (hex):   %s\n", pk)
 	fmt.Println("\n⚠️  Keep your private key (nsec) secret and secure!")
-	
+
+	return nil
+}
+
+func exportIdentity(cmd *cobra.Command, args []string) error {
+	input := args[0]
+	var nsec string
+	var name string
+
+	// Check if input is an identity reference or nsec
+	if strings.HasPrefix(input, "@") {
+		// It's an identity reference
+		name = strings.TrimPrefix(input, "@")
+		identities, err := loadIdentities()
+		if err != nil {
+			return fmt.Errorf("failed to load identities: %w", err)
+		}
+
+		identity, exists := identities[name]
+		if !exists {
+			return fmt.Errorf("identity '%s' not found", name)
+		}
+		nsec = identity.Nsec
+	} else if strings.HasPrefix(input, "nsec1") {
+		// It's a direct nsec
+		nsec = input
+		// Try to find the name for this nsec
+		identities, _ := loadIdentities()
+		for idName, identity := range identities {
+			if identity.Nsec == nsec {
+				name = idName
+				break
+			}
+		}
+		// If no name found, use "unknown"
+		if name == "" {
+			name = "unknown"
+		}
+	} else {
+		return fmt.Errorf("invalid input: must be @name reference or nsec")
+	}
+
+	// Decode nsec to get the private key hex
+	_, skRaw, err := nip19.Decode(nsec)
+	if err != nil {
+		return fmt.Errorf("failed to decode nsec: %w", err)
+	}
+	sk := skRaw.(string)
+
+	// Build the URL
+	params := url.Values{}
+	params.Add("i", sk)
+	params.Add("name", name)
+	exportURL := fmt.Sprintf("https://spotstr.nexel.space?%s", params.Encode())
+
+	// Generate QR code ASCII art
+	qr, err := qrcode.New(exportURL, qrcode.Medium)
+	if err != nil {
+		return fmt.Errorf("failed to generate QR code: %w", err)
+	}
+
+	// Print the results
+	fmt.Println("Export URL:")
+	fmt.Println(exportURL)
+	fmt.Println("\nQR Code:")
+	fmt.Println(qr.ToSmallString(false))
+
 	return nil
 }
