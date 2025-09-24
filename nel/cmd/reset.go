@@ -24,8 +24,8 @@ func init() {
 
 	// Optional flags
 	resetCmd.Flags().Bool("dry-run", false, "Show what would be deleted without actually deleting")
-	resetCmd.Flags().Int("limit", 100, "Maximum number of events to delete")
-	resetCmd.Flags().Bool("all-kinds", false, "Delete all event kinds (default: only location events kind 30473)")
+	resetCmd.Flags().Int("limit", 0, "Maximum number of events to delete per batch (0 = no limit)")
+	resetCmd.Flags().Bool("all-kinds", false, "Delete all event kinds (default: only location events kinds 30472, 30473)")
 }
 
 func runReset(cmd *cobra.Command, args []string) error {
@@ -79,8 +79,8 @@ func runReset(cmd *cobra.Command, args []string) error {
 	limit := k.Int("limit")
 	allKinds := cmd.Flags().Lookup("all-kinds").Value.String() == "true"
 
-	// Connect to relay
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Connect to relay - use longer timeout for potentially many deletions
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	relay, err := nostr.RelayConnect(ctx, relayURL)
@@ -92,116 +92,171 @@ func runReset(cmd *cobra.Command, args []string) error {
 	// Create filter for user's events
 	filter := nostr.Filter{
 		Authors: []string{pubkey},
-		Limit:   limit,
 	}
 
-	// If not all kinds, only query location events
+	// Only set limit if specified (non-zero)
+	if limit > 0 {
+		filter.Limit = limit
+	}
+
+	// If not all kinds, only query location events (both public and private)
 	if !allKinds {
-		filter.Kinds = []int{30473}
+		filter.Kinds = []int{30472, 30473}
 	}
 
 	fmt.Printf("Querying events from %s...\n", relayURL)
 
-	// Subscribe to get events
-	sub, err := relay.Subscribe(ctx, []nostr.Filter{filter})
-	if err != nil {
-		return fmt.Errorf("failed to subscribe: %w", err)
-	}
+	totalDeletedCount := 0
+	totalFailedCount := 0
+	batchNumber := 0
 
-	// Collect events
-	var eventsToDelete []*nostr.Event
-	timeout := time.After(5 * time.Second)
-
-collectLoop:
+	// Loop until no more events are found
 	for {
-		select {
-		case event := <-sub.Events:
-			if event == nil {
-				break collectLoop
-			}
-			eventsToDelete = append(eventsToDelete, event)
+		batchNumber++
 
-		case <-timeout:
-			break collectLoop
-
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled")
+		// Subscribe to get events
+		sub, err := relay.Subscribe(ctx, []nostr.Filter{filter})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe: %w", err)
 		}
-	}
 
-	sub.Close()
+		// Collect events
+		var eventsToDelete []*nostr.Event
+		timeout := time.After(5 * time.Second)
 
-	if len(eventsToDelete) == 0 {
-		fmt.Println("No events found to delete.")
-		return nil
-	}
+	collectLoop:
+		for {
+			select {
+			case event := <-sub.Events:
+				if event == nil {
+					break collectLoop
+				}
+				eventsToDelete = append(eventsToDelete, event)
 
-	fmt.Printf("Found %d events to delete.\n", len(eventsToDelete))
+			case <-timeout:
+				break collectLoop
 
-	if dryRun {
-		fmt.Println("\nDry run mode - showing events that would be deleted:")
-		for i, event := range eventsToDelete {
-			fmt.Printf("%d. Kind: %d, ID: %s, Created: %s\n",
-				i+1,
-				event.Kind,
-				event.ID,
-				time.Unix(int64(event.CreatedAt), 0).Format(time.RFC3339))
+			case <-ctx.Done():
+				sub.Close()
+				return fmt.Errorf("context cancelled")
+			}
+		}
 
-			// Show d-tag if it's an addressable event
-			for _, tag := range event.Tags {
-				if len(tag) >= 2 && tag[0] == "d" {
-					fmt.Printf("   D-tag: %s\n", tag[1])
-					break
+		sub.Close()
+
+		if len(eventsToDelete) == 0 {
+			if batchNumber == 1 {
+				fmt.Println("No events found to delete.")
+			} else {
+				fmt.Println("No more events to delete.")
+			}
+			break
+		}
+
+		fmt.Printf("\nBatch %d: Found %d events to delete.\n", batchNumber, len(eventsToDelete))
+
+		if dryRun {
+			fmt.Println("Dry run mode - showing events that would be deleted:")
+			for i, event := range eventsToDelete {
+				fmt.Printf("%d. Kind: %d, ID: %s, Created: %s\n",
+					i+1,
+					event.Kind,
+					event.ID,
+					time.Unix(int64(event.CreatedAt), 0).Format(time.RFC3339))
+
+				// Show d-tag if it's an addressable event
+				for _, tag := range event.Tags {
+					if len(tag) >= 2 && tag[0] == "d" {
+						fmt.Printf("   D-tag: %s\n", tag[1])
+						break
+					}
 				}
 			}
-		}
-		fmt.Println("\nNo events were deleted (dry run mode).")
-		return nil
-	}
 
-	// Create and publish delete events
-	fmt.Println("\nSending delete requests...")
-	deletedCount := 0
-	failedCount := 0
-
-	for _, eventToDelete := range eventsToDelete {
-		// Create delete request event (kind 5)
-		deleteEvent := &nostr.Event{
-			PubKey:    pubkey,
-			CreatedAt: nostr.Timestamp(time.Now().Unix()),
-			Kind:      5, // Delete request
-			Tags: nostr.Tags{
-				{"e", eventToDelete.ID},
-				{"k", fmt.Sprintf("%d", eventToDelete.Kind)},
-			},
-			Content: "Deleted via nel reset command",
+			if limit > 0 && len(eventsToDelete) == limit {
+				fmt.Println("\nMore events may exist (dry run mode, not fetching next batch).")
+			}
+			break // Exit loop in dry-run mode after showing first batch
 		}
 
-		// Sign the delete event
-		if err := deleteEvent.Sign(sk); err != nil {
-			fmt.Printf("Failed to sign delete event for %s: %v\n", eventToDelete.ID, err)
-			failedCount++
-			continue
+		// Create and publish delete events
+		fmt.Println("Sending delete requests...")
+		deletedCount := 0
+		failedCount := 0
+
+		for i, eventToDelete := range eventsToDelete {
+			// Show progress for large batches
+			if len(eventsToDelete) >= 100 && i > 0 && i%100 == 0 {
+				fmt.Printf("  Progress: %d/%d events processed...\n", i, len(eventsToDelete))
+			}
+
+			// Create delete request event (kind 5)
+			deleteEvent := &nostr.Event{
+				PubKey:    pubkey,
+				CreatedAt: nostr.Timestamp(time.Now().Unix()),
+				Kind:      5, // Delete request
+				Tags: nostr.Tags{
+					{"e", eventToDelete.ID},
+					{"k", fmt.Sprintf("%d", eventToDelete.Kind)},
+				},
+				Content: "Deleted via nel reset command",
+			}
+
+			// Sign the delete event
+			if err := deleteEvent.Sign(sk); err != nil {
+				if len(eventsToDelete) < 20 {
+					fmt.Printf("Failed to sign delete event for %s: %v\n", eventToDelete.ID, err)
+				}
+				failedCount++
+				continue
+			}
+
+			// Publish the delete event with a timeout
+			publishCtx, publishCancel := context.WithTimeout(ctx, 5*time.Second)
+			err := relay.Publish(publishCtx, *deleteEvent)
+			publishCancel()
+
+			if err != nil {
+				if len(eventsToDelete) < 20 {
+					fmt.Printf("Failed to publish delete event for %s: %v\n", eventToDelete.ID, err)
+				}
+				failedCount++
+				continue
+			}
+
+			deletedCount++
+			// Only show individual deletions for small batches
+			if len(eventsToDelete) < 20 {
+				fmt.Printf("Deleted event: %s (kind %d)\n", eventToDelete.ID, eventToDelete.Kind)
+			}
 		}
 
-		// Publish the delete event
-		if err := relay.Publish(ctx, *deleteEvent); err != nil {
-			fmt.Printf("Failed to publish delete event for %s: %v\n", eventToDelete.ID, err)
-			failedCount++
-			continue
+		// Show summary for this batch
+		fmt.Printf("  Batch %d complete: %d deleted, %d failed\n", batchNumber, deletedCount, failedCount)
+
+		totalDeletedCount += deletedCount
+		totalFailedCount += failedCount
+
+		// If we got fewer events than the limit, we've reached the end
+		if limit > 0 && len(eventsToDelete) < limit {
+			break
 		}
 
-		deletedCount++
-		fmt.Printf("Deleted event: %s (kind %d)\n", eventToDelete.ID, eventToDelete.Kind)
+		// Small delay between batches to avoid overwhelming the relay
+		time.Sleep(1 * time.Second)
 	}
 
 	// Summary
-	fmt.Printf("\nReset complete:\n")
-	fmt.Printf("  Events deleted: %d\n", deletedCount)
-	if failedCount > 0 {
-		fmt.Printf("  Failed deletes: %d\n", failedCount)
+	if !dryRun {
+		fmt.Printf("\nReset complete:\n")
+		fmt.Printf("  Total events deleted: %d\n", totalDeletedCount)
+		if totalFailedCount > 0 {
+			fmt.Printf("  Total failed deletes: %d\n", totalFailedCount)
+		}
+		fmt.Printf("  Relay: %s\n", relayURL)
+	} else {
+		fmt.Println("\nNo events were deleted (dry run mode).")
 	}
-	fmt.Printf("  Relay: %s\n", relayURL)
 
 	return nil
 }
