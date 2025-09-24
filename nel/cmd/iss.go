@@ -77,7 +77,6 @@ func runISS(cmd *cobra.Command, args []string) error {
 		processISSUpdate(config)
 		time.Sleep(time.Duration(config.interval) * time.Second)
 	}
-	return nil
 }
 
 type issConfig struct {

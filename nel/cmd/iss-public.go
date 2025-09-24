@@ -50,7 +50,6 @@ func runISSPublic(cmd *cobra.Command, args []string) error {
 		processISSPublicUpdate(config)
 		time.Sleep(time.Duration(config.interval) * time.Second)
 	}
-	return nil
 }
 
 type issPublicConfig struct {
@@ -163,10 +162,10 @@ func createPublicLocationEvent(senderSK string, position *ISSPosition, ttl int, 
 	// Build tags for public event (kind 30472)
 	// According to NostrLocation.md spec: g tag is required, others are optional
 	tags := nostr.Tags{
-		{"g", gh},                             // Required geohash
-		{"d", issLocationID},                  // Identifier for addressable event
+		{"g", gh},            // Required geohash
+		{"d", issLocationID}, // Identifier for addressable event
 		{"expiration", fmt.Sprintf("%d", expiration)}, // Expiration time
-		{"title", "ISS"},                      // Optional: name of location
+		{"title", "ISS"}, // Optional: name of location
 		{"summary", "International Space Station current position"}, // Optional: description
 	}
 
@@ -181,7 +180,7 @@ func createPublicLocationEvent(senderSK string, position *ISSPosition, ttl int, 
 		CreatedAt: nostr.Timestamp(time.Now().Unix()),
 		Kind:      30472, // Public location event kind
 		Tags:      tags,
-		Content:   "",    // No content field for public events
+		Content:   "", // No content field for public events
 	}
 
 	if err := event.Sign(senderSK); err != nil {
