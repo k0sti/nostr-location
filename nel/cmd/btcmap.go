@@ -49,8 +49,9 @@ func init() {
 	rootCmd.AddCommand(btcmapCmd)
 	btcmapCmd.Flags().StringP("sender", "s", "", "Sender private key (nsec... or @identity)")
 	btcmapCmd.Flags().Int("limit", 0, "Number of places to fetch (0 = all)")
-	btcmapCmd.Flags().Int("precision", 6, "Geohash precision (1-12 characters)")
+	btcmapCmd.Flags().Int("precision", 9, "Geohash precision (1-12 characters)")
 	btcmapCmd.Flags().Int("ttl", 3600, "Event time-to-live in seconds")
+	btcmapCmd.Flags().String("filter", "", "Location filter (format: lat:lon:radius_km, e.g., 32.742293:-17.006128:40)")
 
 	btcmapCmd.MarkFlagRequired("sender")
 }
@@ -64,6 +65,9 @@ func runBTCMap(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Printf("Fetching BTCMap merchant locations...")
+	if config.filter != "" {
+		log.Printf("Filter: %s", config.filter)
+	}
 	if config.limit > 0 {
 		log.Printf("Limit: %d places", config.limit)
 	} else {
@@ -72,7 +76,7 @@ func runBTCMap(cmd *cobra.Command, args []string) error {
 	log.Printf("Relay: %s", config.relayURL)
 	log.Printf("Mode: Public broadcast (kind 30472)")
 
-	places, err := fetchBTCMapPlaces(config.limit)
+	places, err := fetchBTCMapPlaces(config)
 	if err != nil {
 		return fmt.Errorf("failed to fetch BTCMap data: %w", err)
 	}
@@ -99,6 +103,7 @@ type btcmapConfig struct {
 	limit     int
 	precision int
 	ttl       int
+	filter    string
 }
 
 func validateBTCMapConfig() (*btcmapConfig, error) {
@@ -106,7 +111,6 @@ func validateBTCMapConfig() (*btcmapConfig, error) {
 	if sender == "" {
 		return nil, fmt.Errorf("sender is required (--sender or -s)")
 	}
-
 
 	relayURL := k.String("relay")
 	if relayURL == "" {
@@ -122,7 +126,6 @@ func validateBTCMapConfig() (*btcmapConfig, error) {
 		return nil, fmt.Errorf("failed to decode sender nsec: %w", err)
 	}
 
-
 	limit := k.Int("limit")
 
 	precision := k.Int("precision")
@@ -135,19 +138,43 @@ func validateBTCMapConfig() (*btcmapConfig, error) {
 		ttl = 3600
 	}
 
+	filter := k.String("filter")
+	if filter != "" {
+		// Validate filter format: lat:lon:radius_km
+		parts := strings.Split(filter, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid filter format. Expected: lat:lon:radius_km (e.g., 32.742293:-17.006128:40)")
+		}
+	}
+
 	return &btcmapConfig{
 		senderSK:  senderSK.(string),
 		relayURL:  relayURL,
 		limit:     limit,
 		precision: precision,
 		ttl:       ttl,
+		filter:    filter,
 	}, nil
 }
 
-func fetchBTCMapPlaces(limit int) ([]BTCMapPlace, error) {
-	url := fmt.Sprintf("%s?fields=%s", btcmapAPIURL, btcmapFields)
-	if limit > 0 {
-		url = fmt.Sprintf("%s&limit=%d", url, limit)
+func fetchBTCMapPlaces(config *btcmapConfig) ([]BTCMapPlace, error) {
+	var url string
+
+	if config.filter != "" {
+		// Use search endpoint for location-based filtering
+		parts := strings.Split(config.filter, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid filter format")
+		}
+		url = fmt.Sprintf("%s/search/?lat=%s&lon=%s&radius_km=%s&fields=%s",
+			btcmapAPIURL, parts[0], parts[1], parts[2], btcmapFields)
+	} else {
+		// Use regular endpoint
+		url = fmt.Sprintf("%s?fields=%s", btcmapAPIURL, btcmapFields)
+	}
+
+	if config.limit > 0 {
+		url = fmt.Sprintf("%s&limit=%d", url, config.limit)
 	}
 
 	resp, err := http.Get(url)
