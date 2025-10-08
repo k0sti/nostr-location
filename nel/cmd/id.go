@@ -85,12 +85,12 @@ func init() {
 
 func getIdentityFile() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".nel-identities.json")
+	return filepath.Join(home, ".noloc-identities.json")
 }
 
 func loadIdentities() (map[string]Identity, error) {
 	identities := make(map[string]Identity)
-	
+
 	file := getIdentityFile()
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -99,11 +99,11 @@ func loadIdentities() (map[string]Identity, error) {
 		}
 		return nil, err
 	}
-	
+
 	if err := json.Unmarshal(data, &identities); err != nil {
 		return nil, err
 	}
-	
+
 	return identities, nil
 }
 
@@ -112,7 +112,7 @@ func saveIdentities(identities map[string]Identity) error {
 	if err != nil {
 		return err
 	}
-	
+
 	file := getIdentityFile()
 	return os.WriteFile(file, data, 0600)
 }
@@ -122,58 +122,58 @@ func listIdentities(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	if len(identities) == 0 {
-		fmt.Println("No identities found. Use 'nel id add' or 'nel id generate' to create one.")
+		fmt.Println("No identities found. Use 'noloc id add' or 'noloc id generate' to create one.")
 		return nil
 	}
-	
+
 	fmt.Println("Known Identities:")
 	fmt.Println(strings.Repeat("-", 60))
-	
+
 	for name, id := range identities {
 		fmt.Printf("Name: %s\n", name)
 		fmt.Printf("  Npub: %s\n", id.Npub)
 		fmt.Printf("  Added: %s\n", id.Added)
 		fmt.Println()
 	}
-	
+
 	return nil
 }
 
 func addIdentity(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	nsec := args[1]
-	
+
 	if !strings.HasPrefix(nsec, "nsec1") {
 		return fmt.Errorf("invalid nsec format (must start with 'nsec1')")
 	}
-	
+
 	_, skRaw, err := nip19.Decode(nsec)
 	if err != nil {
 		return fmt.Errorf("failed to decode nsec: %w", err)
 	}
 	sk := skRaw.(string)
-	
+
 	pubkey, err := nostr.GetPublicKey(sk)
 	if err != nil {
 		return fmt.Errorf("failed to get public key: %w", err)
 	}
-	
+
 	npub, err := nip19.EncodePublicKey(pubkey)
 	if err != nil {
 		return fmt.Errorf("failed to encode npub: %w", err)
 	}
-	
+
 	identities, err := loadIdentities()
 	if err != nil {
 		return fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	if _, exists := identities[name]; exists {
 		return fmt.Errorf("identity '%s' already exists", name)
 	}
-	
+
 	identities[name] = Identity{
 		Name:  name,
 		Nsec:  nsec,
@@ -181,58 +181,58 @@ func addIdentity(cmd *cobra.Command, args []string) error {
 		Hex:   pubkey,
 		Added: time.Now().Format("2006-01-02 15:04:05"),
 	}
-	
+
 	if err := saveIdentities(identities); err != nil {
 		return fmt.Errorf("failed to save identities: %w", err)
 	}
-	
+
 	fmt.Printf("Added identity '%s'\n", name)
 	fmt.Printf("  Npub: %s\n", npub)
-	
+
 	return nil
 }
 
 func removeIdentity(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	
+
 	identities, err := loadIdentities()
 	if err != nil {
 		return fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	if _, exists := identities[name]; !exists {
 		return fmt.Errorf("identity '%s' not found", name)
 	}
-	
+
 	delete(identities, name)
-	
+
 	if err := saveIdentities(identities); err != nil {
 		return fmt.Errorf("failed to save identities: %w", err)
 	}
-	
+
 	fmt.Printf("Removed identity '%s'\n", name)
 	return nil
 }
 
 func showIdentity(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	
+
 	identities, err := loadIdentities()
 	if err != nil {
 		return fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	id, exists := identities[name]
 	if !exists {
 		return fmt.Errorf("identity '%s' not found", name)
 	}
-	
+
 	fmt.Printf("Identity: %s\n", name)
 	fmt.Printf("  Nsec: %s\n", id.Nsec)
 	fmt.Printf("  Npub: %s\n", id.Npub)
 	fmt.Printf("  Hex:  %s\n", id.Hex)
 	fmt.Printf("  Added: %s\n", id.Added)
-	
+
 	return nil
 }
 
@@ -242,25 +242,25 @@ func ResolveIdentityReference(value string, keyType string) (string, error) {
 	if !strings.HasPrefix(value, "@") {
 		return value, nil
 	}
-	
+
 	// Extract the identity name
 	name := strings.TrimPrefix(value, "@")
 	if name == "" {
 		return "", fmt.Errorf("invalid identity reference: missing name after @")
 	}
-	
+
 	// Load identities
 	identities, err := loadIdentities()
 	if err != nil {
 		return "", fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	// Look up the identity
 	identity, exists := identities[name]
 	if !exists {
 		return "", fmt.Errorf("identity '%s' not found", name)
 	}
-	
+
 	// Return the appropriate key based on keyType
 	switch keyType {
 	case "nsec":
@@ -274,24 +274,24 @@ func ResolveIdentityReference(value string, keyType string) (string, error) {
 
 func generateIdentity(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	
+
 	// Load existing identities
 	identities, err := loadIdentities()
 	if err != nil {
 		return fmt.Errorf("failed to load identities: %w", err)
 	}
-	
+
 	// Check if name already exists
 	if _, exists := identities[name]; exists {
 		return fmt.Errorf("identity '%s' already exists", name)
 	}
-	
+
 	// Generate new keys
 	sk := nostr.GeneratePrivateKey()
 	pk, _ := nostr.GetPublicKey(sk)
 	nsec, _ := nip19.EncodePrivateKey(sk)
 	npub, _ := nip19.EncodePublicKey(pk)
-	
+
 	// Save identity
 	identities[name] = Identity{
 		Name:  name,
@@ -300,11 +300,11 @@ func generateIdentity(cmd *cobra.Command, args []string) error {
 		Hex:   pk,
 		Added: time.Now().Format("2006-01-02 15:04:05"),
 	}
-	
+
 	if err := saveIdentities(identities); err != nil {
 		return fmt.Errorf("failed to save identity: %w", err)
 	}
-	
+
 	// Display results
 	fmt.Printf("Generated and saved new identity '%s':\n", name)
 	fmt.Printf("  Private Key (nsec): %s\n", nsec)
@@ -362,8 +362,8 @@ func exportIdentity(cmd *cobra.Command, args []string) error {
 
 	// Build the URL
 	params := url.Values{}
-	params.Add("i", sk)
-	params.Add("name", name)
+	params.Add("g", sk)
+	params.Add("n", name)
 	exportURL := fmt.Sprintf("https://spotstr.nexel.space?%s", params.Encode())
 
 	// Generate QR code ASCII art

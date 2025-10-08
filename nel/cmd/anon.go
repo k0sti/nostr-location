@@ -46,7 +46,7 @@ func runAnon(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(identities) == 0 {
-		return fmt.Errorf("no identities found. Use 'nel id generate' to create identities")
+		return fmt.Errorf("no identities found. Use 'noloc id generate' to create identities")
 	}
 
 	// Collect all npubs and nsecs

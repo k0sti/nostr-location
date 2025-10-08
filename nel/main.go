@@ -1,7 +1,7 @@
 package main
 
 import (
-	"nel/cmd"
+	"noloc/cmd"
 )
 
 func main() {

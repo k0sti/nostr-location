@@ -1,4 +1,4 @@
-module nel
+module noloc
 
 go 1.24.5
 

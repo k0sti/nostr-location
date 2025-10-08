@@ -1,14 +1,15 @@
-# NEL - Nostr Encrypted Location
+# noloc - Nostr Location
 
-NEL is a CLI tool for sharing encrypted location data over the Nostr protocol using NIP-44 encryption.
+noloc is a CLI tool for handling location-first Nostr events including both public location events (kind 30472) and encrypted location events (kind 30473).
 
 ## Features
 
-- 🔐 End-to-end encrypted location sharing using NIP-44
-- 📍 Geohash-based location encoding  
+- 🔐 Optional end-to-end encrypted location sharing using NIP-44
+- 📍 Geohash-based location encoding
 - 🆔 Multiple identity management
 - 🛰️ ISS tracker demo application
 - 📡 Real-time location event listener
+- 📍 Support for both public (kind 30472) and encrypted (kind 30473) location events
 
 ## Installation
 
@@ -25,7 +26,7 @@ just build
 Track the International Space Station and broadcast its location:
 
 ```bash
-nel iss --sender-nsec <nsec> --receiver-npub <npub> --relay <relay-url>
+noloc iss --sender-nsec <nsec> --receiver-npub <npub> --relay <relay-url>
 ```
 
 ### Listen for Location Events
@@ -33,33 +34,33 @@ nel iss --sender-nsec <nsec> --receiver-npub <npub> --relay <relay-url>
 Receive and decrypt location messages:
 
 ```bash
-nel listen --receiver-nsec <nsec> --relay <relay-url>
+noloc listen --receiver-nsec <nsec> --relay <relay-url>
 ```
 
 ### Identity Management
 
 ```bash
 # Generate new identity
-nel id generate --save alice
+noloc id generate alice
 
-# List identities  
-nel id list
+# List identities
+noloc id list
 
 # Show identity details
-nel id show alice
+noloc id show alice
 ```
 
 ## Configuration
 
-NEL supports configuration via:
+noloc supports configuration via:
 - Command-line flags
-- Environment variables (NEL_ prefix)
+- Environment variables (NOLOC_ prefix)
 - .env file
-- ~/.nel.yaml config file
+- ~/.noloc.yaml config file
 
 ## NIP-location Specification
 
-This implementation follows the encrypted location sharing specification defined in NIP-location.md, using:
-- Event kind: 30473
-- NIP-44 encryption for content
+This implementation follows the location-first event specifications defined in NIP-location.md, using:
+- Event kind 30472 for public location events
+- Event kind 30473 for encrypted location events with NIP-44 encryption
 - Geohash encoding for coordinates

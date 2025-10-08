@@ -18,13 +18,13 @@ import (
 var k = koanf.New(".")
 
 var rootCmd = &cobra.Command{
-	Use:   "nel",
-	Short: "Nostr Encrypted Location - Share encrypted location data via Nostr",
-	Long: `NEL (Nostr Encrypted Location) is a CLI tool for sharing encrypted 
-location data over the Nostr protocol using NIP-44 encryption.
+	Use:   "noloc",
+	Short: "Nostr Location - Handle location-first Nostr events (kind 30472 and 30473)",
+	Long: `noloc is a CLI tool for handling location-first Nostr events including
+both public location events (kind 30472) and encrypted location events (kind 30473).
 
-It supports sending and receiving location events with end-to-end encryption,
-managing multiple identities, and includes a demo ISS tracker.`,
+It supports sending and receiving location events with optional end-to-end encryption,
+managing multiple identities, and includes demos for ISS tracking and other location sources.`,
 }
 
 func Execute() {
@@ -51,7 +51,7 @@ func initConfig() {
 
 	// Load config file from home directory
 	if home, err := os.UserHomeDir(); err == nil {
-		configFile := filepath.Join(home, ".nel.yaml")
+		configFile := filepath.Join(home, ".noloc.yaml")
 		k.Load(file.Provider(configFile), yaml.Parser())
 	}
 
@@ -59,12 +59,12 @@ func initConfig() {
 	loadEnvFile()
 
 	// Load environment variables (highest priority)
-	k.Load(env.Provider("NEL_", ".", func(s string) string {
+	k.Load(env.Provider("NOLOC_", ".", func(s string) string {
 		return strings.ReplaceAll(strings.ToLower(s), "_", ".")
 	}), nil)
 }
 
-// loadEnvFile loads NEL_ prefixed variables from .env file
+// loadEnvFile loads NOLOC_ prefixed variables from .env file
 func loadEnvFile() {
 	if _, err := os.Stat(".env"); err != nil {
 		return
@@ -76,8 +76,8 @@ func loadEnvFile() {
 	}
 
 	for _, key := range tempK.Keys() {
-		if strings.HasPrefix(key, "NEL_") {
-			normalizedKey := strings.ToLower(strings.TrimPrefix(key, "NEL_"))
+		if strings.HasPrefix(key, "NOLOC_") {
+			normalizedKey := strings.ToLower(strings.TrimPrefix(key, "NOLOC_"))
 			normalizedKey = strings.ReplaceAll(normalizedKey, "_", ".")
 			k.Set(normalizedKey, tempK.Get(key))
 		}

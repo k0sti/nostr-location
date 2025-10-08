@@ -3,11 +3,11 @@
 default:
     @just --list
 
-# Build the nel CLI
+# Build the noloc CLI
 build:
-    go build -o nel .
+    go build -o noloc .
 
-# Install nel to $GOPATH/bin
+# Install noloc to $GOPATH/bin
 install: build
     go install
 
@@ -29,7 +29,7 @@ id-list:
 
 # Clean build artifacts
 clean:
-    rm -f nel
+    rm -f noloc
 
 # Run go fmt
 fmt:
@@ -45,7 +45,7 @@ test:
 
 # Build for multiple platforms
 build-all:
-    GOOS=linux GOARCH=amd64 go build -o nel-linux-amd64 .
-    GOOS=darwin GOARCH=amd64 go build -o nel-darwin-amd64 .
-    GOOS=darwin GOARCH=arm64 go build -o nel-darwin-arm64 .
-    GOOS=windows GOARCH=amd64 go build -o nel-windows-amd64.exe .
+    GOOS=linux GOARCH=amd64 go build -o noloc-linux-amd64 .
+    GOOS=darwin GOARCH=amd64 go build -o noloc-darwin-amd64 .
+    GOOS=darwin GOARCH=arm64 go build -o noloc-darwin-arm64 .
+    GOOS=windows GOARCH=amd64 go build -o noloc-windows-amd64.exe .

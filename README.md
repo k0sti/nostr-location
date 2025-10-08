@@ -7,7 +7,7 @@ It adds specification for public location events.
 
 Old (but valid) specification for [encrypted location sharing](doc/NIP-location.md).
 
-There is command line tool [NEL](nel/README.md) for testing encrypted locations.
+There is command line tool [noloc](nel/README.md) for handling location-first Nostr events (both public and encrypted).
 
 There is also [Spotstr](https://github.com/k0sti/spotstr) web client what supports encrypted `kind:30473` events.
 
