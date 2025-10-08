@@ -93,7 +93,7 @@ func runTrains(cmd *cobra.Command, args []string) error {
 	fmt.Printf("✅ Connected to Nostr relay\n\n")
 
 	// Create MQTT client
-	clientID := fmt.Sprintf("nel_train_%d", rand.Intn(10000))
+	clientID := fmt.Sprintf("noloc_train_%d", rand.Intn(10000))
 	opts := mqtt.NewClientOptions()
 	// Use TCP connection to rata-mqtt.digitraffic.fi
 	opts.AddBroker("tcp://rata-mqtt.digitraffic.fi:1883")

@@ -199,7 +199,7 @@ func runReset(cmd *cobra.Command, args []string) error {
 					{"e", eventToDelete.ID},
 					{"k", fmt.Sprintf("%d", eventToDelete.Kind)},
 				},
-				Content: "Deleted via nel reset command",
+				Content: "Deleted via noloc reset command",
 			}
 
 			// Sign the delete event
