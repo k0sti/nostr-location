@@ -308,3 +308,11 @@ func publishToRelay(relayURL string, event *nostr.Event) error {
 
 	return nil
 }
+
+// publishToRelayWithConnection publishes an event using an existing relay connection
+func publishToRelayWithConnection(ctx context.Context, relay *nostr.Relay, event *nostr.Event) error {
+	if err := relay.Publish(ctx, *event); err != nil {
+		return fmt.Errorf("failed to publish event: %w", err)
+	}
+	return nil
+}

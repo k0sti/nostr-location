@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,14 +84,26 @@ func runBTCMap(cmd *cobra.Command, args []string) error {
 
 	log.Printf("Fetched %d places from BTCMap", len(places))
 
+	// Establish relay connection once and reuse it
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	relay, err := nostr.RelayConnect(ctx, config.relayURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to relay: %w", err)
+	}
+	defer relay.Close()
+
+	log.Printf("Connected to relay: %s", config.relayURL)
+
 	for i, place := range places {
-		if err := processBTCMapPlace(config, place); err != nil {
+		if err := processBTCMapPlace(ctx, relay, config, place); err != nil {
 			log.Printf("Error processing place %d (ID: %d): %v", i+1, place.ID, err)
 		} else {
 			log.Printf("Processed place %d/%d: %s", i+1, len(places), place.Name)
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		// time.Sleep(10 * time.Millisecond)
 	}
 
 	log.Printf("Completed broadcasting %d BTCMap locations", len(places))
@@ -201,13 +214,13 @@ func fetchBTCMapPlaces(config *btcmapConfig) ([]BTCMapPlace, error) {
 	return places, nil
 }
 
-func processBTCMapPlace(config *btcmapConfig, place BTCMapPlace) error {
+func processBTCMapPlace(ctx context.Context, relay *nostr.Relay, config *btcmapConfig, place BTCMapPlace) error {
 	event, err := createBTCMapLocationEvent(config, place)
 	if err != nil {
 		return fmt.Errorf("failed to create event: %w", err)
 	}
 
-	if err := publishToRelay(config.relayURL, event); err != nil {
+	if err := publishToRelayWithConnection(ctx, relay, event); err != nil {
 		return fmt.Errorf("failed to publish: %w", err)
 	}
 
